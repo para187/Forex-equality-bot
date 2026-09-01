@@ -1,0 +1,7 @@
+flask
+requests
+pandas
+numpy
+pytz
+tvdatafeed@git+https://github.com/rongardF/tvdatafeed.git
+gunicorn
