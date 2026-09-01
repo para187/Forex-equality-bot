@@ -16,8 +16,8 @@ from tvDatafeed import TvDatafeed, Interval
 # ==========================================
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 LOCAL_TZ = pytz.timezone('Africa/Nairobi') # East Africa Time (EAT - UTC+3)
 
 MEMORY_FILE = "sniper_memory.json"
@@ -39,16 +39,24 @@ app = Flask(__name__)
 def home():
     return "Sniper Equality Bot (Anti-Block & Dual Alert Engine) is Live!"
 
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
-
-# Initialize TvDatafeed (Anonymous Mode with Anti-Block Protection)
+# Initialize TvDatafeed (Anonymous Safe Mode)
 tv = TvDatafeed()
 
 # ==========================================
-# MEMORY & HELPER FUNCTIONS
+# TELEGRAM & MEMORY HELPER FUNCTIONS
 # ==========================================
+def send_telegram_message(message):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logging.warning("Telegram Token au Chat ID haijawekwa kwenye Environment Variables.")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        logging.info(f"Telegram API Response: {res.status_code}")
+    except Exception as e:
+        logging.error(f"Telegram API Error: {e}")
+
 def load_memory():
     if os.path.exists(MEMORY_FILE):
         try:
@@ -86,17 +94,6 @@ def record_loss_trap():
 def get_local_time():
     return datetime.now(LOCAL_TZ)
 
-def send_telegram_message(message):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        logging.warning("Telegram Token/Chat ID missing.")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        logging.error(f"Telegram API Error: {e}")
-
 # ==========================================
 # SAFE TVDATAFEED FETCH (ANTI-BLOCK WRAPPER)
 # ==========================================
@@ -111,11 +108,11 @@ def fetch_tv_data_safely(symbol, exchange, n_bars=60, retries=3):
                 return df
         except Exception as e:
             logging.warning(f"Jaribio {attempt+1} limefeli kwa {symbol}: {e}")
-            time.sleep(2) # Subiri sec 2 kabla ya kujaribu tena
+            time.sleep(2)
     return None
 
 # ==========================================
-# INDICATOR CALCULATIONS
+# INDICATOR & STRATEGY CALCULATIONS
 # ==========================================
 def calculate_rsi(series, period=14):
     delta = series.diff()
@@ -218,7 +215,6 @@ def evaluate_sniper_strategies(df, pair):
 
 def analyze_pair_super_sniper(pair, symbol, exchange):
     try:
-        # Tumia Safe Wrapper badala ya kutuma maombi moja kwa moja
         df = fetch_tv_data_safely(symbol, exchange, n_bars=60)
         if df is None:
             return None
@@ -256,7 +252,7 @@ def process_trade_lifecycle(pair, symbol, exchange, setup_data):
     now = get_local_time()
     target_entry_time = (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
-    # 1. TUMA PRE-ALERT (DAKIKA 1 KABLA - 00:00 MARK)
+    # 1. PRE-ALERT (DAKIKA 1 KABLA)
     pre_alert_msg = (
         f"⏳ *PRE-ALERT (DAKIKA 1 KABLA)* ⏳\n\n"
         f"💱 *Pair:* `{pair}`\n"
@@ -273,14 +269,14 @@ def process_trade_lifecycle(pair, symbol, exchange, setup_data):
     if wait_until_55 > 0:
         time.sleep(wait_until_55)
 
-    # 2. ANGALIA UTHIBITISHO WA MWISHO (SEC 5 KABLA - 00:55 MARK)
+    # 2. FINAL ALERT (CONFIRMATION SEC 5 KABLA)
     final_check = analyze_pair_super_sniper(pair, symbol, exchange)
 
     if final_check and final_check['signal'] == setup_data['signal']:
         expiry_time = target_entry_time + timedelta(minutes=final_check['duration'])
         
         final_alert_msg = (
-            f"🚨 *FINAL ALERT (CONFIRMED - ININGIA SEC 5)* 🚨\n\n"
+            f"🚨 *FINAL ALERT (CONFIRMED - INGIA SEC 5)* 🚨\n\n"
             f"💱 *Pair:* `{pair}`\n"
             f"💥 *ACTION NOW:* *{'🟢 CALL (BUY)' if final_check['signal'] == 'CALL' else '🔴 PUT (SELL)'}*\n"
             f"🏁 *Expiry Time:* `{expiry_time.strftime('%H:%M:%S')} EAT`\n"
@@ -290,7 +286,7 @@ def process_trade_lifecycle(pair, symbol, exchange, setup_data):
         )
         send_telegram_message(final_alert_msg)
 
-        # 3. SUBIRI TRADING DURATION IISHE KABISA
+        # 3. SUBIRI DURATION IISHE KABISA
         time.sleep((final_check['duration'] * 60) + 5)
 
         # 4. MONITOR MATOKEO YA TRADE
@@ -329,17 +325,19 @@ def process_trade_lifecycle(pair, symbol, exchange, setup_data):
     IS_TRADE_ACTIVE = False
 
 # ==========================================
-# MAIN EXECUTION LOOP (WITH THROTTLING)
+# MAIN LOOP ENGINE
 # ==========================================
 def main_loop():
     logging.info("Sniper Engine Active with Anti-Block Engine & Dual Alert...")
 
+    # UJUMBE WA JARIBIO UNAPOWAKA RENDER
     send_telegram_message(
         "👑 *SNIPER EQUALITY BOT IS ACTIVE*\n\n"
-        "⏱ *Pre-Alert:* Dakika 1 Kabla (00:00 Mark)\n"
-        "🚨 *Final Confirmation:* Sekunde 5 Kabla (00:55 Mark)\n"
-        "🛡️ *Anti-Block Protection:* Enabled (Safe Mode)\n"
-        "🔒 *Single Trade Lock:* Active!"
+        "🟢 Server: *Render Live*\n"
+        "⏱ Pre-Alert: *Dakika 1 Kabla (00:00 Mark)*\n"
+        "🚨 Final Confirmation: *Sekunde 5 Kabla (00:55 Mark)*\n"
+        "🛡️ Anti-Block Protection: *Enabled*\n"
+        "🔒 Single Trade Lock: *Active!*"
     )
 
     while True:
@@ -359,7 +357,7 @@ def main_loop():
                         time.sleep(5)
                         break
                     
-                    # ANTI-BLOCK PAUSE: Subiri sec 1.2 kati ya pair na pair ili kuzuia TradingView Rate Limit
+                    # ANTI-BLOCK PAUSE: Subiri sec 1.2 kati ya pair na pair
                     time.sleep(1.2)
 
             time.sleep(0.5)
@@ -367,6 +365,12 @@ def main_loop():
             logging.error(f"Main loop error: {e}")
             time.sleep(2)
 
+# ==========================================
+# START BACKGROUND THREAD FOR GUNICORN & FLASK
+# ==========================================
+# Anzisha bot loop kwenye background mara tu Gunicorn inapopakiwa
+threading.Thread(target=main_loop, daemon=True).start()
+
 if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    main_loop()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
